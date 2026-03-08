@@ -2,48 +2,60 @@ import javax.microedition.lcdui.*;
 import javax.microedition.midlet.*;
 
 public class GameCanvas extends Canvas implements Runnable {
-    
     public static final int STATE_MENU = 0;
     public static final int STATE_GAME = 1;
-    public static final int STATE_PAUSE = 2;
+    public static final int STATE_COMBAT = 2;
+    public static final int STATE_SHOP = 3;
+    public static final int STATE_INVENTORY = 4;
+    public static final int STATE_QUEST = 5;
+    public static final int STATE_PAUSE = 6;
     
     private int gameState = STATE_MENU;
-    private int menuSelection = 0;
-    private static final int FPS = 30;
-    private static final int FRAME_TIME = 1000 / FPS;
-    
+    private int menuSelection = 0, shopSelection = 0, invSelection = 0;
+    private Thread gameThread;
     private boolean running = false;
-    private Thread gameThread = null;
+    private Graphics g;
+    private int sw, sh;
     
-    private int heroX = 120;
-    private int heroY = 120;
-    private int heroSize = 16;
-    private int heroFrame = 0;
-    private int heroDirection = 0;
+    // Héroe
+    private int heroX = 160, heroY = 120;
+    private boolean up, down, left, right;
     
-    private boolean upPressed = false;
-    private boolean downPressed = false;
-    private boolean leftPressed = false;
-    private boolean rightPressed = false;
+    // Estadísticas
+    private int hp = 100, maxHp = 100;
+    private int mp = 50, maxMp = 50;
+    private int level = 1, exp = 0, gold = 100;
+    private int attack = 10, defense = 5;
     
-    private Graphics g;    private int screenWidth;
-    private int screenHeight;
+    // Inventario
+    private String[] items = {"Poción", "Éter", "Espada", "Escudo"};
+    private int[] qty = {3, 1, 1, 1};
     
-    private int mapOffsetX = 0;
-    private int mapOffsetY = 0;
+    // Enemigos
+    private Enemy[] enemies = {
+        new Enemy("Slime", 30, 5, 15),
+        new Enemy("Goblin", 50, 8, 25),
+        new Enemy("Esqueleto", 70, 12, 40),
+        new Enemy("Orco", 100, 15, 60),
+        new Enemy("Dragón", 200, 25, 200)
+    };
+    private Enemy currentEnemy;
     
-    private Font titleFont;
-    private Font menuFont;
-    private Font smallFont;
+    // Tienda
+    private String[] shopItems = {"Poción", "Éter", "Espada+1", "Armadura"};
+    private int[] prices = {10, 25, 100, 150};
+    
+    // Misiones
+    private String[] quests = {"Derrota 5 Slimes", "Consigue 200 oro", "Derrota Dragón"};
+    private int[] questProg = {0, 0, 0};    
+    // Combate
+    private int combatTurn = 0;
+    private String combatMsg = "";
     
     public GameCanvas() {
         setFullScreenMode(true);
-        screenWidth = getWidth();
-        screenHeight = getHeight();
-        
-        titleFont = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE);
-        menuFont = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_PLAIN, Font.SIZE_MEDIUM);
-        smallFont = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_PLAIN, Font.SIZE_SMALL);
+        sw = getWidth();
+        sh = getHeight();
     }
     
     public void start() {
@@ -54,275 +66,248 @@ public class GameCanvas extends Canvas implements Runnable {
     
     public void stop() {
         running = false;
-        try {
-            if (gameThread != null) gameThread.join();
-        } catch (InterruptedException e) {}
+        try { if(gameThread != null) gameThread.join(); } catch(Exception e) {}
     }
     
     public void run() {
-        long lastTime = System.currentTimeMillis();
-        while (running) {
-            long currentTime = System.currentTimeMillis();
-            long elapsed = currentTime - lastTime;
-            if (elapsed >= FRAME_TIME) {
-                lastTime = currentTime;
-                update();
-                repaint();
-            }
-            try { Thread.sleep(1); } catch (InterruptedException e) {}
+        while(running) {
+            update();
+            repaint();
+            try { Thread.sleep(50); } catch(Exception e) {}
         }
     }
     
-    private void update() {
-        if (gameState == STATE_GAME) {
-            int speed = 2;            boolean moved = false;
-            
-            if (upPressed && heroY > 0) {
-                heroY -= speed;
-                heroDirection = 0;
-                moved = true;
-            }
-            if (downPressed && heroY < screenHeight - heroSize - 20) {
-                heroY += speed;
-                heroDirection = 1;
-                moved = true;
-            }
-            if (leftPressed && heroX > 0) {
-                heroX -= speed;
-                heroDirection = 2;
-                moved = true;
-            }
-            if (rightPressed && heroX < screenWidth - heroSize) {
-                heroX += speed;
-                heroDirection = 3;
-                moved = true;
-            }
-            
-            if (moved) {
-                heroFrame = (heroFrame + 1) % 4;
-            } else {
-                heroFrame = 0;
-            }
-            
-            mapOffsetX = heroX - screenWidth / 2;
-            mapOffsetY = heroY - screenHeight / 2;
+    void update() {
+        if(gameState == STATE_GAME) {
+            if(up && heroY > 0) heroY -= 3;
+            if(down && heroY < sh - 20) heroY += 3;
+            if(left && heroX > 0) heroX -= 3;
+            if(right && heroX < sw - 20) heroX += 3;
         }
+        if(combatMsgTimer > 0) combatMsgTimer--;
     }
     
     protected void paint(Graphics g) {
         this.g = g;
-        
         g.setColor(0x000000);
-        g.fillRect(0, 0, screenWidth, screenHeight);
+        g.fillRect(0, 0, sw, sh);
         
-        if (gameState == STATE_MENU) {
-            drawMenu();
-        } else if (gameState == STATE_GAME) {
-            drawGame();
-        } else if (gameState == STATE_PAUSE) {
-            drawGame();
-            drawPauseMenu();
+        switch(gameState) {
+            case STATE_MENU: drawMenu(); break;
+            case STATE_GAME: drawGame(); break;
+            case STATE_COMBAT: drawCombat(); break;
+            case STATE_SHOP: drawShop(); break;            case STATE_INVENTORY: drawInventory(); break;
+            case STATE_QUEST: drawQuests(); break;
+            case STATE_PAUSE: drawPause(); break;
         }
     }
-        private void drawMenu() {
+    
+    void drawMenu() {
+        g.setColor(0x00ff00);
+        g.setFont(Font.getFont(0, 1, 8));
+        g.drawString("HEROES LORE", sw/2, 50, 1);
+        g.drawString("Wind of Soltia", sw/2, 80, 1);
+        g.setColor(menuSelection == 0 ? 0x00ff00 : 0x888888);
+        g.drawString("> NUEVO JUEGO <", sw/2, 130, 1);
+        g.setColor(menuSelection == 1 ? 0x00ff00 : 0x888888);
+        g.drawString("> CARGAR <", sw/2, 160, 1);
+        g.setColor(menuSelection == 2 ? 0x00ff00 : 0x888888);
+        g.drawString("> SALIR <", sw/2, 190, 1);
+    }
+    
+    void drawGame() {
+        g.setColor(0x3d6b16);
+        g.fillRect(0, 0, sw, sh);
+        g.setColor(0x00ff00);
+        g.fillRect(heroX, heroY, 16, 16);
+        g.setColor(0xffffff);
+        g.drawRect(heroX, heroY, 16, 16);
+        g.drawString("HP:" + hp + "/" + maxHp, 5, 5, 0);
+        g.drawString("MP:" + mp + "/" + maxMp, 5, 20, 0);
+        g.drawString("Nvl:" + level, 5, 35, 0);
+        g.drawString("Oro:" + gold, sw-60, 5, 0);
+        g.drawString("5:Inv 7:Mapa 1:Tienda", sw/2, sh-20, 1);
+    }
+    
+    void drawCombat() {
         g.setColor(0x1a1a2e);
-        g.fillRect(0, 0, screenWidth, screenHeight);
-        
-        for (int i = 0; i < screenWidth; i += 30) {
-            g.setColor(0x16213e);
-            g.drawLine(i, 0, i, screenHeight);
-        }
-        for (int i = 0; i < screenHeight; i += 30) {
-            g.setColor(0x16213e);
-            g.drawLine(0, i, screenWidth, i);
-        }
-        
-        g.setFont(titleFont);
+        g.fillRect(0, 0, sw, sh);
+        g.setColor(0xff0000);
+        g.fillRect(sw/2-30, 50, 60, 60);
+        g.drawString(currentEnemy.name, sw/2, 120, 1);
+        g.drawString("HP:" + currentEnemy.hp + "/" + currentEnemy.maxHp, sw/2, 140, 1);
         g.setColor(0x00ff00);
-        int titleWidth = titleFont.stringWidth("HEROES LORE");
-        g.drawString("HEROES LORE", (screenWidth - titleWidth) / 2, 40, Graphics.TOP | Graphics.LEFT);
-        
-        g.setColor(0x00aa00);
-        int subtitleWidth = menuFont.stringWidth("Wind of Soltia");
-        g.drawString("Wind of Soltia", (screenWidth - subtitleWidth) / 2, 75, Graphics.TOP | Graphics.LEFT);
-        
-        g.setFont(menuFont);
+        g.fillRect(50, sh-100, 60, 60);
+        g.drawString("HEROE", 50, sh-30, 0);
+        g.drawString("HP:" + hp, 50, sh-15, 0);
         g.setColor(0xffffff);
-        
-        int yPos = 150;
-        if (menuSelection == 0) {
-            g.setColor(0x00ff00);
-            g.drawString("> NUEVO JUEGO <", screenWidth / 2, yPos, Graphics.TOP | Graphics.HCENTER);
-        } else {
-            g.setColor(0x888888);
-            g.drawString("NUEVO JUEGO", screenWidth / 2, yPos, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("1:Atacar 2:Magia 5:Huir", sw/2, sh-20, 1);
+        if(combatMsg != null && combatMsgTimer > 0) {
+            g.setColor(0xffff00);
+            g.drawString(combatMsg, sw/2, 200, 1);
+        }    }
+    
+    void drawShop() {
+        g.setColor(0x2d1b00);
+        g.fillRect(0, 0, sw, sh);
+        g.setColor(0xffaa00);
+        g.setFont(Font.getFont(0, 1, 8));
+        g.drawString("TIENDA", sw/2, 20, 1);
+        g.setColor(0xffffff);
+        g.drawString("Oro: " + gold, sw/2, 45, 1);
+        for(int i=0; i<shopItems.length; i++) {
+            g.setColor(i == shopSelection ? 0x00ff00 : 0xffffff);
+            g.drawString(shopItems[i] + " - $" + prices[i], 20, 70 + i*25, 0);
         }
-        
-        yPos += 30;
-        if (menuSelection == 1) {
-            g.setColor(0x00ff00);
-            g.drawString("> CONTINUAR <", screenWidth / 2, yPos, Graphics.TOP | Graphics.HCENTER);
-        } else {
-            g.setColor(0x888888);
-            g.drawString("CONTINUAR", screenWidth / 2, yPos, Graphics.TOP | Graphics.HCENTER);
-        }
-        
-        yPos += 30;
-        if (menuSelection == 2) {
-            g.setColor(0x00ff00);
-            g.drawString("> OPCIONES <", screenWidth / 2, yPos, Graphics.TOP | Graphics.HCENTER);
-        } else {
-            g.setColor(0x888888);
-            g.drawString("OPCIONES", screenWidth / 2, yPos, Graphics.TOP | Graphics.HCENTER);        }
-        
-        yPos += 30;
-        if (menuSelection == 3) {
-            g.setColor(0x00ff00);
-            g.drawString("> SALIR <", screenWidth / 2, yPos, Graphics.TOP | Graphics.HCENTER);
-        } else {
-            g.setColor(0x888888);
-            g.drawString("SALIR", screenWidth / 2, yPos, Graphics.TOP | Graphics.HCENTER);
-        }
-        
-        g.setFont(smallFont);
-        g.setColor(0x555555);
-        g.drawString("Use 2/8 navegar, 5 seleccionar", screenWidth / 2, screenHeight - 30, Graphics.BOTTOM | Graphics.HCENTER);
+        g.setColor(0x888888);
+        g.drawString("2/8:Navegar 5:Comprar 0:Salir", sw/2, sh-20, 1);
     }
     
-    private void drawGame() {
-        for (int x = 0; x < screenWidth; x += 20) {
-            for (int y = 0; y < screenHeight; y += 20) {
-                int mapX = x + mapOffsetX;
-                int mapY = y + mapOffsetY;
-                
-                if ((mapX / 20 + mapY / 20) % 2 == 0) {
-                    g.setColor(0x2d5016);
-                } else {
-                    g.setColor(0x3d6b16);
+    void drawInventory() {
+        g.setColor(0x001a33);
+        g.fillRect(0, 0, sw, sh);
+        g.setColor(0x00ccff);
+        g.setFont(Font.getFont(0, 1, 8));
+        g.drawString("INVENTARIO", sw/2, 20, 1);
+        g.setColor(0xffffff);
+        for(int i=0; i<items.length; i++) {
+            g.setColor(i == invSelection ? 0x00ff00 : 0xffffff);
+            g.drawString(items[i] + " x" + qty[i], 20, 70 + i*25, 0);
+        }
+        g.setColor(0x888888);
+        g.drawString("2/8:Navegar 5:Usar 0:Salir", sw/2, sh-20, 1);
+    }
+    
+    void drawQuests() {
+        g.setColor(0x1a0033);
+        g.fillRect(0, 0, sw, sh);
+        g.setColor(0xcc00ff);
+        g.setFont(Font.getFont(0, 1, 8));
+        g.drawString("MISIONES", sw/2, 20, 1);
+        g.setColor(0xffffff);
+        for(int i=0; i<quests.length; i++) {
+            g.setColor(questProg[i] > 0 ? 0x00ff00 : 0x888888);
+            g.drawString(quests[i], 20, 70 + i*25, 0);
+        }
+        g.setColor(0x888888);
+        g.drawString("5:Volver", sw/2, sh-20, 1);
+    }
+    
+    void drawPause() {
+        g.setColor(0x333333);        g.fillRect(0, 0, sw, sh);
+        g.setColor(0xffffff);
+        g.setFont(Font.getFont(0, 1, 8));
+        g.drawString("PAUSA", sw/2, sw/4+15, 1);
+        g.drawString("5:Continuar", sw/2, sw/4+40, 1);
+        g.drawString("1:Salir al Menu", sw/2, sw/4+60, 1);
+    }
+    
+    protected void keyPressed(int k) {
+        int a = getGameAction(k);
+        
+        if(gameState == STATE_MENU) {
+            if(a == UP) menuSelection = (menuSelection - 1 + 3) % 3;
+            if(a == DOWN) menuSelection = (menuSelection + 1) % 3;
+            if(a == FIRE) {
+                if(menuSelection == 0) gameState = STATE_GAME;
+                else if(menuSelection == 2) System.exit(0);
+            }
+        }
+        else if(gameState == STATE_GAME) {
+            if(a == UP) up = true;
+            if(a == DOWN) down = true;
+            if(a == LEFT) left = true;
+            if(a == RIGHT) right = true;
+            if(k == 5) gameState = STATE_PAUSE;
+            if(k == 7) gameState = STATE_QUEST;
+            if(k == 1) gameState = STATE_SHOP;
+            if(k == 2) { // Inventario
+                if(qty[0] > 0 && hp < maxHp) {
+                    qty[0]--;
+                    hp = Math.min(hp + 30, maxHp);
                 }
-                g.fillRect(x, y, 20, 20);
+            }
+            // Combate aleatorio
+            if(Math.random() < 0.01) {
+                currentEnemy = enemies[(int)(Math.random() * enemies.length)];
+                currentEnemy.hp = currentEnemy.maxHp;
+                gameState = STATE_COMBAT;
+                combatTurn = 0;
             }
         }
-        
-        g.setColor(0x1a4d1a);
-        for (int i = 0; i < screenWidth; i += 40) {
-            g.drawLine(i, 0, i, screenHeight);
-        }
-        for (int i = 0; i < screenHeight; i += 40) {
-            g.drawLine(0, i, screenWidth, i);
-        }
-        
-        drawHero(heroX, heroY, heroFrame, heroDirection);
-        
-        g.setColor(0x000000);
-        g.fillRect(0, screenHeight - 25, screenWidth, 25);
-        
-        g.setColor(0x00ff00);
-        g.setFont(smallFont);
-        g.drawString("HP:100/100", 5, screenHeight - 20, Graphics.TOP | Graphics.LEFT);
-        g.drawString("MP:50/50", screenWidth / 2 - 20, screenHeight - 20, Graphics.TOP | Graphics.LEFT);
-        g.drawString("LVL:1", screenWidth - 35, screenHeight - 20, Graphics.TOP | Graphics.LEFT);
-                g.setColor(0x00ff00);
-        g.fillRect(50, screenHeight - 18, 40, 4);
-        g.setColor(0x0000ff);
-        g.fillRect(50, screenHeight - 12, 30, 4);
-    }
-    
-    private void drawHero(int x, int y, int frame, int direction) {
-        int bounce = (frame % 2) * 2;
-        
-        g.setColor(0x0066cc);
-        g.fillRect(x + 2, y + bounce, 12, 14 - bounce);
-        
-        g.setColor(0xffcc99);
-        g.fillRect(x + 4, y + 2 + bounce, 8, 6);
-        
-        g.setColor(0x000000);
-        if (direction == 2) {
-            g.fillRect(x + 5, y + 4 + bounce, 2, 2);
-        } else if (direction == 3) {
-            g.fillRect(x + 9, y + 4 + bounce, 2, 2);
-        } else {
-            g.fillRect(x + 5, y + 4 + bounce, 2, 2);
-            g.fillRect(x + 9, y + 4 + bounce, 2, 2);
-        }
-        
-        g.setColor(0xcc6600);
-        g.fillRect(x + 1, y + 8 + bounce, 14, 2);
-        
-        if (frame > 0) {
-            g.setColor(0x0066cc);
-            if (frame % 4 == 1 || frame % 4 == 3) {
-                g.fillRect(x + (frame % 2) * 4, y + 14, 4, 4);
-            }
-        }
-    }
-    
-    private void drawPauseMenu() {
-        g.setColor(0x000000);
-        g.fillRect(0, 0, screenWidth, screenHeight);
-        
-        g.setColor(0x333333);
-        g.fillRect(screenWidth / 4, screenHeight / 3, screenWidth / 2, screenHeight / 3);
-        
-        g.setColor(0x00ff00);
-        g.drawRect(screenWidth / 4, screenHeight / 3, screenWidth / 2, screenHeight / 3);
-        
-        g.setFont(menuFont);
-        g.setColor(0xffffff);
-        g.drawString("PAUSA", screenWidth / 2, screenHeight / 3 + 10, Graphics.TOP | Graphics.HCENTER);
-        g.drawString("5 - Continuar", screenWidth / 2, screenHeight / 3 + 40, Graphics.TOP | Graphics.HCENTER);        g.drawString("7 - Salir", screenWidth / 2, screenHeight / 3 + 60, Graphics.TOP | Graphics.HCENTER);
-    }
-    
-    protected void keyPressed(int keyCode) {
-        int gameAction = getGameAction(keyCode);
-        
-        if (gameState == STATE_MENU) {
-            if (keyCode == KEY_NUM2 || gameAction == UP) {
-                menuSelection = (menuSelection - 1 + 4) % 4;
-            }
-            if (keyCode == KEY_NUM8 || gameAction == DOWN) {
-                menuSelection = (menuSelection + 1) % 4;
-            }
-            if (keyCode == KEY_NUM5 || gameAction == FIRE) {
-                if (menuSelection == 0) {
+        else if(gameState == STATE_COMBAT) {
+            if(combatTurn == 0) {
+                if(k == 1) { // Atacar
+                    int dmg = attack + (int)(Math.random() * 5);
+                    currentEnemy.hp -= dmg;
+                    combatMsg = "Atacaste: " + dmg + " daño";
+                    combatMsgTimer = 60;
+                    combatTurn = 1;
+                }                if(k == 2) { // Magia
+                    if(mp >= 10) {
+                        mp -= 10;
+                        int dmg = attack * 2;
+                        currentEnemy.hp -= dmg;
+                        combatMsg = "Magia: " + dmg + " daño";
+                        combatMsgTimer = 60;
+                        combatTurn = 1;
+                    }
+                }
+                if(k == 5) { // Huir
                     gameState = STATE_GAME;
-                    heroX = screenWidth / 2;
-                    heroY = screenHeight / 2;
-                } else if (menuSelection == 3) {
-                    running = false;
                 }
             }
-        } else if (gameState == STATE_GAME) {
-            if (gameAction == UP) upPressed = true;
-            if (gameAction == DOWN) downPressed = true;
-            if (gameAction == LEFT) leftPressed = true;
-            if (gameAction == RIGHT) rightPressed = true;
-            if (keyCode == KEY_NUM2) upPressed = true;
-            if (keyCode == KEY_NUM8) downPressed = true;
-            if (keyCode == KEY_NUM4) leftPressed = true;
-            if (keyCode == KEY_NUM6) rightPressed = true;
-            if (keyCode == KEY_NUM5 || keyCode == KEY_NUM7) {
-                gameState = STATE_PAUSE;
+        }
+        else if(gameState == STATE_SHOP) {
+            if(a == UP) shopSelection = (shopSelection - 1 + shopItems.length) % shopItems.length;
+            if(a == DOWN) shopSelection = (shopSelection + 1) % shopItems.length;
+            if(k == 5) { // Comprar
+                if(gold >= prices[shopSelection]) {
+                    gold -= prices[shopSelection];
+                    if(shopSelection < 2) qty[shopSelection]++;
+                    combatMsg = "¡Comprado!";
+                } else combatMsg = "Sin oro";
             }
-        } else if (gameState == STATE_PAUSE) {
-            if (keyCode == KEY_NUM5) {
-                gameState = STATE_GAME;
+            if(k == 0) gameState = STATE_GAME;
+        }
+        else if(gameState == STATE_INVENTORY) {
+            if(a == UP) invSelection = (invSelection - 1 + items.length) % items.length;
+            if(a == DOWN) invSelection = (invSelection + 1) % items.length;
+            if(k == 5) { // Usar item
+                if(qty[invSelection] > 0) {
+                    qty[invSelection]--;
+                    if(invSelection == 0) hp = Math.min(hp + 30, maxHp);
+                    if(invSelection == 1) mp = Math.min(mp + 20, maxMp);
+                }
             }
-            if (keyCode == KEY_NUM7) {
-                gameState = STATE_MENU;
-            }
+            if(k == 0) gameState = STATE_GAME;
+        }
+        else if(gameState == STATE_QUEST) {
+            if(k == 5) gameState = STATE_GAME;
+        }
+        else if(gameState == STATE_PAUSE) {
+            if(k == 5) gameState = STATE_GAME;
+            if(k == 1) gameState = STATE_MENU;
         }
     }
     
-    protected void keyReleased(int keyCode) {
-        int gameAction = getGameAction(keyCode);
-        if (gameAction == UP) upPressed = false;
-        if (gameAction == DOWN) downPressed = false;
-        if (gameAction == LEFT) leftPressed = false;
-        if (gameAction == RIGHT) rightPressed = false;        if (keyCode == KEY_NUM2) upPressed = false;
-        if (keyCode == KEY_NUM8) downPressed = false;
-        if (keyCode == KEY_NUM4) leftPressed = false;
-        if (keyCode == KEY_NUM6) rightPressed = false;
+    protected void keyReleased(int k) {
+        int a = getGameAction(k);        if(a == UP) up = false;
+        if(a == DOWN) down = false;
+        if(a == LEFT) left = false;
+        if(a == RIGHT) right = false;
     }
-}
+    
+    class Enemy {
+        String name;
+        int hp, maxHp, attack, exp, gold;
+        Enemy(String name, int hp, int attack, int exp) {
+            this.name = name;
+            this.hp = hp;
+            this.maxHp = hp;
+            this.attack = attack;
+            this.exp = exp;
+            this.gold = 10 + (int)(Math.random() * 20);
+        }
+    }
+    }
