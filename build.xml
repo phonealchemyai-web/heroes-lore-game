@@ -1,0 +1,28 @@
+<project name="J2MERPG" default="build" basedir=".">
+    <property name="src" location="src"/>
+    <property name="lib" location="lib"/>
+    <property name="dist" location="dist"/>
+    <property name="midpapi" location="lib/midpapi20.jar"/>
+    <property name="cldcapi" location="lib/cldcapi11.jar"/>
+    
+    <target name="init"><mkdir dir="${dist}"/></target>
+    
+    <target name="compile" depends="init">
+        <javac srcdir="${src}" destdir="${dist}" bootclasspath="${midpapi}:${cldcapi}" target="7" source="7" debug="off" includeantruntime="false"/>    </target>
+    
+    <target name="jar" depends="compile">
+        <jar destfile="${dist}/J2MERPG.jar" basedir="${dist}">
+            <manifest>
+                <attribute name="MIDlet-Name" value="J2MERPG"/>
+                <attribute name="MIDlet-Version" value="1.0"/>
+                <attribute name="MIDlet-Vendor" value="TuNombre"/>
+                <attribute name="MIDlet-1" value="J2MERPG,,J2MERPG"/>
+                <attribute name="MicroEdition-Configuration" value="CLDC-1.1"/>
+                <attribute name="MicroEdition-Profile" value="MIDP-2.0"/>
+            </manifest>
+        </jar>
+    </target>
+    
+    <target name="build" depends="jar"/>
+    <target name="clean"><delete dir="${dist}"/></target>
+</project>
