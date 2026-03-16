@@ -2,11 +2,17 @@ name: Build APK
 on: [push]
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v2
-      - name: Build with Buildozer
-        uses: ArtemSerebriakov/buildozer-action@v1
+      - uses: actions/checkout@v3
+
+      - name: Get Date
+        id: get-date
+        run: |
+          echo "date=$(date +'%Y-%m-%d-%H;%M;%S')" >> $GITHUB_OUTPUT
+
+      - name: WebFactory Buildozer Action
+        uses: GearSnd/buildozer-action@v2
         with:
           python_version: 3.11
           buildozer_version: master
